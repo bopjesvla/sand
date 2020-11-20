@@ -14,7 +14,7 @@ end
 factorial.(22222)
 """)
 
-# returns {:error, :killed}
+# returns {:error, :max_reductions}
 ```
 
 Well-behaved programs run without a hitch:
@@ -36,7 +36,7 @@ factorial.(5)
 
 Sand operates a small whitelist of permitted language constructs. Everything else is forbidden.
 
-Only a subset of Elixir language constructs is available. Additionally, user code cannot access named functions (of the form `Module.function`) except for a small number of pre-imported functions, such as `+/2` and `is_integer/1`. This means that the Elixir standard library is not available in the sandbox. Functions without side effects, such as `Enum.map`, can, however, be re-implemented as anonymous functions in the sandbox.
+Only a subset of Elixir syntax is supported. Additionally, user code cannot access named functions (of the form `Module.function`) except for a small number of pre-imported functions, such as `+/2` and `is_integer/1`. This means that the Elixir standard library is not available in the sandbox. Functions without side effects, such as `Enum.map`, can, however, be re-implemented as anonymous functions in the sandbox.
 
 These are the permitted language constructs:
 
@@ -47,7 +47,8 @@ These are the permitted language constructs:
 - Variables, atoms, integers, floats, lists, anonymous functions and anonymous function calls
 - Binary strings smaller than 64 bytes
 - These macros: `case ^ |> if in` 
-- The recursion macro `r`, shown in the examples above, which enables recursion in anonymous functions
+- The recursion macro `r`, which enables recursion in anonymous functions
+- Bracket indexing on maps and keyword lists: `map[key]` 
 
 ## Resource Management
 
@@ -59,9 +60,9 @@ Memory is limited using `max_heap_size`. Computation is limited by monitoring `P
 
 ## State
 
-Both state and configuration are held in the `%Sand{...}` struct. This struct can be passed as the first argument to `Sand.run/2` and `Sand.assign/2`. Each of those functions returns an altered `Sand` struct, holding the new state.
+Both state and configuration are held in the `%Sand{...}` struct. This struct can be passed as the first argument to `Sand.run/2` and `Sand.assign/2`. Both of those functions return an altered `Sand` struct, holding the new state.
 
-Like IEx, Sand keeps all top-level variables as state:
+As in IEx, all top-level variables are part of the state:
 
 ```elixir
 {:ok, 9, box} = Sand.run("""
@@ -82,18 +83,28 @@ Sand.assign("input", %{width: 50, height: 100})
 |> Sand.run(user_code)
 ```
 
+## Atom Renaming
+
+Atoms are not garbage collected. Because of this, all atoms are renamed to a fixed set of atoms when code is parsed. By default, the prefix is set to `sand_atom_`.
+
+```elixir
+{:ok, [:sand_atom_0, :sand_atom_1], box} = Sand.run("[:first, :second]")
+{:ok, [:sand_atom_0, :sand_atom_2], _} = Sand.run(box, "[:first, :third]")
+```
+
 ## Configuration
 
 The majority of fields in the `%Sand{...}` struct are configuration options:
 
 ```elixir
+prefix: "sand_atom_", # the atom prefix
 max_heap_size: 125_000, # process memory in words
 max_reductions: 1_000_000, # maximum number of reductions per call of Sandbox.run/2
 max_vars: 10_000, # Maximum number of variables
 timeout: 10_000 # Number of milliseconds before Sandbox.run/2 is aborted
 ```
 
-These can be altered between runs:
+Except for the atom prefix, all options can be altered between runs:
 
 ```
 lil_memory = %Sand{max_heap_size: 10_000}
@@ -115,26 +126,27 @@ loop = fn -> loop.() end
 #     (elixir 1.10.4) src/elixir_fn.erl:20: :elixir_fn.expand/3
 ```
 
-Since anonymous functions are the only permitted functions, the recursion macro `r` is inlined:
+Because anonymous functions are the only functions permitted in Sand, `r`, a macro enabling recursion, is inlined:
 
 ```elixir
-# The syntax is `r [NAME] = fn [BODY] end`
 
 r loop = fn -> loop.() end
 loop.()
 ```
 
-`r` is a Z-combinator.
+The syntax is `r [NAME] = fn [BODY] end`.
 
-## Reasons this sandbox may or may not be safe
+## This sandbox may not be safe
 
-BEAM uses preemptive scheduling. The scheduler switches to a different process every 2000 reductions. Because of this, tight loops as in the `loop` example above do not freeze up a core, ensuring that the reduction counter will quickly stop the process. However, as I understand it, reduction count does not directly translate to CPU cycles. The cost of each built-in function (e.g. `+/2`) is estimated rather than measured. As such, a malicious process may be able to claim more CPU time than others by performing heavy computations with a low reduction count. I do not know enough about the scheduler to say if this will be a problem.
+BEAM uses preemptive scheduling. The scheduler switches to a different process every 2000 reductions. Because of this, tight loops do not freeze up a core, and the reduction counter will quickly stop the process. However, as I understand it, reduction count does not directly translate to CPU cycles. The cost of each built-in function (e.g. `+/2`) is estimated rather than measured. As such, a malicious process may be able to claim more CPU time than others by performing heavy computations with a relatively low reduction count. I do not know enough about the scheduler to say if this will be a problem.
 
-Memory usage is checked after garbage collecting, meaning that user code has 2000 reductions to go from slightly below memory limits to wherever they want. I have not been able to exceed the max heap size by more than 40% before being killed, but someone might.
+Memory usage is checked after garbage collecting, meaning that the actual memory limit is `max_heap_size` plus whatever the user code can claim in 2000 reductions. I have not been able to exceed the max heap size by more than 40% before being killed, but someone might.
 
-Atoms are renamed to existing atoms when user code is parsed. I am quite confident filling the atom table will be impossible, but I might be wrong.
+I am quite confident that filling the atom table is impossible, but I could be wrong.
 
-Finally and most importantly, I built this thing and, at the time of writing, I am the only person who tried to break it. This should not inspire trust.
+AST whitelisting is based on my understanding of the capabilities of each Elixir construct. I may be unaware of certain language features which can be used in malicious ways.
+
+Most importantly, I built this thing and, at the time of writing, I am the only person who tried to break it. This should not inspire trust.
 
 ## Installation
 

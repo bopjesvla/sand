@@ -9,7 +9,6 @@ defmodule Sand.ReductionCounter do
       :undefined ->
         :ok
       {:reductions, r} when r >= max_r ->
-        IO.inspect("KILLING")
         Process.exit(pid, :max_reductions)
       {:reductions, _} ->
         :timer.sleep(100)

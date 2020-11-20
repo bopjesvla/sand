@@ -13,10 +13,10 @@ defmodule Sand do
 
   defstruct counter: 0, # variable book-keeping
     vars: %{},
-    prefix: "sand_var_",
     bindings: [],
 
     # CONFIGURATION
+    prefix: "sand_atom_", # the prefix the sandbox atoms get
     max_heap_size: 125_000, # process memory in words
     max_reductions: 1_000_000, # maximum number of reductions per call of Sandbox.run/2
     max_vars: 10_000, # Maximum number of variables
@@ -56,8 +56,6 @@ defmodule Sand do
   @safe_all @safe_unary ++ @safe_inlined ++ @safe_ops ++ @safe_macro_kw ++ @safe_reserved
 
   @safe_str Enum.map(@safe_all, &to_string/1)
-
-  Enum.map(@safe_all, &IO.inspect/1)
 
   def var(name, acc) do
     acc = if acc.vars[name] do

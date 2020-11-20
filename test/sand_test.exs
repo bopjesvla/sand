@@ -24,6 +24,20 @@ defmodule SandTest do
     fork.(10000)
     """)
 
+    before = :erlang.system_time(:millisecond)
+
+    assert {:ok, n, _} = Sand.run(%Sand{max_reductions: 10_000_000}, """
+    r fork = fn
+    1 -> 1.23456889565645743734732434234367
+    n -> {fork.(n - 1), fork.(n - 1)}
+    end
+
+    fork.(10)
+    """)
+
+    # IO.inspect n
+    IO.inspect :erlang.system_time(:millisecond) - before
+
     assert {:error, :killed} = Sand.run(lil_memory, """
     r fork = fn
     1 -> [3]
@@ -33,10 +47,14 @@ defmodule SandTest do
     fork.(10000)
     """)
 
+    before = :erlang.system_time(:millisecond)
+
     assert {:error, :max_reductions} = Sand.run(lil_memory, """
     r loop = fn -> loop.() end
     loop.()
     """)
+
+    IO.inspect :erlang.system_time(:millisecond) - before
 
     Process.flag(:trap_exit, true)
     assert {:ok, 6, _} = Sand.run(~s/1 + 5/)
@@ -77,7 +95,11 @@ defmodule SandTest do
     """)
     {:error, {_, _}} = Sand.run(~s/~e(a b)/)
     {:error, {_, _}} = Sand.run(~s/:self.self()/)
+    # {:ok, 1, _} = Sand.run("a=1")
     Sand.sandbox(":a")
+
+    {:ok, [:sand_atom_0, :sand_atom_1], box} = Sand.run("[:first, :second]")
+    {:ok, [:sand_atom_0, :sand_atom_2], _} = Sand.run(box, "[:first, :third]")
 
     Sand.run("{1, 2, 3}")
     Sand.run("{1, 2}")
@@ -115,6 +137,12 @@ defmodule SandTest do
     # 120 = factorial.(5)
   end
 
+  test "parallel" do
+    before = :erlang.system_time(:millisecond)
+    Enum.map(1..50, &Task.async fn -> &1; Sand.run(%Sand{max_reductions: 10_000_000}, "r loop = fn -> loop.() end; loop.()") end) |> Enum.map(&Task.await/1)
+    IO.inspect :erlang.system_time(:millisecond) - before
+  end
+
   test "basic module" do
     Code.eval_string(@basicmodule)
 
@@ -147,5 +175,14 @@ defmodule SandTest do
     Code.eval_string(~s/<<"a", "b">> = "ab"/, [], requires: [Kernel], macros: @core)
     Code.eval_string(~s/<<"a", "b">>/, [], requires: [Kernel], macros: [{Kernel, <>: 2}])
     Code.eval_string(~s/5 + 3/, [], requires: [Kernel], macros: [{Kernel, <>: 2}])
+  end
+
+  test "static atoms encoder" do
+    encoder = fn
+      string, _meta ->
+        {:ok, {:atom, string}}
+    end
+    Code.string_to_quoted!("a = 1", static_atoms_encoder: encoder)
+    # Code.string_to_quoted!("a=1", static_atoms_encoder: encoder)
   end
 end
