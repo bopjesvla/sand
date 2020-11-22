@@ -56,6 +56,42 @@ defmodule SandTest do
 
     IO.inspect :erlang.system_time(:millisecond) - before
 
+    import Sand.Rfn
+
+    jobs = %{
+      sandboxed: fn ->
+      Sand.run("""
+      r factorial = fn
+      1 -> 1
+      n -> n * factorial.(n - 1)
+      end
+
+      factorial.(5)
+      """)
+    end,
+      standard: fn ->
+        r factorial = fn
+          1 -> 1
+          n -> n * factorial.(n - 1)
+        end
+
+        factorial.(5)
+      end
+    }
+
+    Benchee.run(jobs)
+
+    assert {:ok, 120, _} = Sand.run("""
+    r factorial = fn
+    1 -> 1
+    n -> n * factorial.(n - 1)
+    end
+
+    factorial.(5)
+    """)
+
+    IO.inspect nice: :erlang.system_time(:millisecond) - before
+
     Process.flag(:trap_exit, true)
     assert {:ok, 6, _} = Sand.run(~s/1 + 5/)
     assert {:ok, 1, _} = Sand.run(~s/1 = 1/)
@@ -89,8 +125,8 @@ defmodule SandTest do
     catch_error Sand.sandbox(~s/<<"a", "b">>/)
     Sand.run("""
     z = 1; fn
-      [_q | y] -> y
-      %{x: 1} -> 5
+    [_q | y] -> y
+    %{x: 1} -> 5
     end
     """)
     {:error, {_, _}} = Sand.run(~s/~e(a b)/)
