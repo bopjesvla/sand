@@ -2,7 +2,7 @@
 
 Sand is a sandbox for Elixir. **It should not be used in production at this point in time.**
 
-Sand employs AST whitelisting and BEAM features to ensure that untrusted Elixir code can be run without side effects, that memory and CPU usage are limited, and that the atom table is not filled.
+Sand employs AST whitelisting and BEAM features to ensure that untrusted Elixir code can be run without side effects, that memory and CPU usage are limited, and that the atom table is not filled:
 
 ```elixir
 Sand.run("""
@@ -138,13 +138,23 @@ The syntax is `r [NAME] = fn [BODY] end`.
 
 ## This sandbox may not be safe
 
+### CPU usage
+
 BEAM uses preemptive scheduling. The scheduler switches to a different process every 2000 reductions. Because of this, tight loops do not freeze up a core, and the reduction counter will quickly stop the process. However, as I understand it, reduction count does not directly translate to CPU cycles. The cost of each built-in function (e.g. `+/2`) is estimated rather than measured. As such, a malicious process may be able to claim more CPU time than others by performing heavy computations with a relatively low reduction count. I do not know enough about the scheduler to say if this will be a problem.
+
+### Memory usage
 
 Memory usage is checked after garbage collecting, meaning that the actual memory limit is `max_heap_size` plus whatever the user code can claim in 2000 reductions. I have not been able to exceed the max heap size by more than 40% before being killed, but someone might.
 
+### The atom table
+
 I am quite confident that filling the atom table is impossible, but I could be wrong.
 
+### AST whitelisting
+
 AST whitelisting is based on my understanding of the capabilities of each Elixir construct. I may be unaware of certain language features which can be used in malicious ways.
+
+### Unknown unknowns
 
 Most importantly, I built this thing and, at the time of writing, I am the only person who tried to break it. This should not inspire trust.
 
