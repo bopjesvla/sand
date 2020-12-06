@@ -1,18 +1,22 @@
 defmodule Sand.ReductionCounter do
-  def new(max_count) do
+  def new(max_count, timeout) do
     pid = self()
-    spawn_link fn -> check_reductions(pid, max_count) end
+    spawn_link fn -> check_reductions(pid, max_count, timeout) end
   end
 
-  def check_reductions(pid, max_r) do
+  def check_reductions(pid, max_r, timeout) do
     case Process.info(pid, :reductions) do
+      nil ->
+        :ok
       :undefined ->
         :ok
       {:reductions, r} when r >= max_r ->
         Process.exit(pid, :max_reductions)
       {:reductions, _} ->
-        :timer.sleep(100)
-        check_reductions(pid, max_r)
+        if timeout > 0 do
+          :timer.sleep(timeout)
+        end
+        check_reductions(pid, max_r, timeout)
     end
   end
 

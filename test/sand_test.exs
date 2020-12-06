@@ -56,31 +56,6 @@ defmodule SandTest do
 
     IO.inspect :erlang.system_time(:millisecond) - before
 
-    import Sand.Rfn
-
-    jobs = %{
-      sandboxed: fn ->
-      Sand.run("""
-      r factorial = fn
-      1 -> 1
-      n -> n * factorial.(n - 1)
-      end
-
-      factorial.(5)
-      """)
-    end,
-      standard: fn ->
-        r factorial = fn
-          1 -> 1
-          n -> n * factorial.(n - 1)
-        end
-
-        factorial.(5)
-      end
-    }
-
-    Benchee.run(jobs)
-
     assert {:ok, 120, _} = Sand.run("""
     r factorial = fn
     1 -> 1
@@ -173,10 +148,18 @@ defmodule SandTest do
     # 120 = factorial.(5)
   end
 
-  test "parallel" do
-    before = :erlang.system_time(:millisecond)
-    Enum.map(1..50, &Task.async fn -> &1; Sand.run(%Sand{max_reductions: 10_000_000}, "r loop = fn -> loop.() end; loop.()") end) |> Enum.map(&Task.await/1)
-    IO.inspect :erlang.system_time(:millisecond) - before
+  # test "parallel" do
+  #   before = :erlang.system_time(:millisecond)
+  #   Enum.map(1..50, &Task.async fn -> &1; Sand.run(%Sand{max_reductions: 10_000_000}, "r loop = fn -> loop.() end; loop.()") end) |> Enum.map(&Task.await/1)
+  #   IO.inspect :erlang.system_time(:millisecond) - before
+  # end
+
+  test "load" do
+    assert {:ok, [1,4,9], _} = Sand.run("""
+    load enum_map, "enum_map"
+
+    enum_map.([1,2,3], &(&1 * &1))
+    """)
   end
 
   test "basic module" do
@@ -195,6 +178,13 @@ defmodule SandTest do
     |> Sand.run("random.(5)")
 
     assert n in 0..5
+  end
+
+  test "get" do
+    assert {:ok, _, box} = Sand.run("""
+    x = %{a: %{"b" => 1}}
+    """)
+    assert 1 == Sand.get_nested(box, [:x, :a, "b"])
   end
 
   test "no imports" do
@@ -220,5 +210,62 @@ defmodule SandTest do
     end
     Code.string_to_quoted!("a = 1", static_atoms_encoder: encoder)
     # Code.string_to_quoted!("a=1", static_atoms_encoder: encoder)
+  end
+
+  test "rewrite named functions" do
+    # {:ok, _, _} = Sand.run("Enum.map([], & &1)")
+  end
+
+  # @tag :skip
+  @tag timeout: :infinity
+  test "benchmark" do
+    import Sand.Rfn
+
+    jobs = %{
+      sandboxed_factorial: fn ->
+      Sand.run(%Sand{reduction_monitor_timeout: 100}, """
+      r factorial = fn
+      1 -> 1
+      n -> n * factorial.(n - 1)
+      end
+
+      factorial.(5)
+      """)
+    end,
+      sandboxed_factorial_quick_check: fn ->
+        Sand.run(%Sand{reduction_monitor_timeout: 0}, """
+      r factorial = fn
+      1 -> 1
+      n -> n * factorial.(n - 1)
+      end
+
+      factorial.(5)
+      """)
+    end,
+      standard: fn ->
+        r factorial = fn
+          1 -> 1
+          n -> n * factorial.(n - 1)
+        end
+
+        factorial.(5)
+      end,
+      loop: fn ->
+        Sand.run(%Sand{reduction_monitor_timeout: 100}, """
+        r loop = fn -> loop.() end
+
+        loop.()
+        """)
+      end,
+      loop_quick_check: fn ->
+        Sand.run(%Sand{reduction_monitor_timeout: 0}, """
+        r loop = fn -> loop.() end
+
+        loop.()
+        """)
+      end
+    }
+
+    Benchee.run(jobs, parallel: 8)
   end
 end
